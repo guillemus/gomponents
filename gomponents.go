@@ -23,6 +23,7 @@ import (
 	"html/template"
 	"io"
 	"strings"
+	"sync"
 )
 
 // Node is a DOM node that can Render itself to a [io.Writer].
@@ -369,4 +370,36 @@ func Iff(condition bool, f func() Node) Node {
 		return f()
 	}
 	return nil
+}
+
+// Static pre-renders a large static HTML tree once and reuses the rendered HTML.
+// Use it only for nodes that never depend on request data, user data, or changing state.
+//
+// For example:
+//
+//	var staticHead = Static(Head(
+//		TitleEl(Text("My site")),
+//		Link(Rel("stylesheet"), Href("/app.css")),
+//	))
+//
+//	func Page(body Node) Node {
+//		return HTML(staticHead, Body(body))
+//	}
+func Static(node Node) Node {
+	var once sync.Once
+	var html string
+	var renderErr error
+
+	return NodeFunc(func(w io.Writer) error {
+		once.Do(func() {
+			var b strings.Builder
+			renderErr = node.Render(&b)
+			html = b.String()
+		})
+		if renderErr != nil {
+			return renderErr
+		}
+		_, writeErr := io.WriteString(w, html)
+		return writeErr
+	})
 }

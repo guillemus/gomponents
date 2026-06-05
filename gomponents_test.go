@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	g "maragu.dev/gomponents"
@@ -386,4 +388,90 @@ func ExampleIff() {
 
 	_ = e.Render(os.Stdout)
 	// Output: <div></div>
+}
+
+func TestStatic(t *testing.T) {
+	t.Run("renders child once and reuses rendered HTML", func(t *testing.T) {
+		var renders int
+		n := g.Static(g.NodeFunc(func(w io.Writer) error {
+			renders++
+			_, err := io.WriteString(w, `<div id="hat">Party hat</div>`)
+			return err
+		}))
+
+		assert.Equal(t, `<div id="hat">Party hat</div>`, n)
+		assert.Equal(t, `<div id="hat">Party hat</div>`, n)
+		if renders != 1 {
+			t.Fatalf("expected 1 render, got %v", renders)
+		}
+	})
+
+	t.Run("returns cached render error", func(t *testing.T) {
+		renderErr := errors.New("render failed")
+		var renders int
+		n := g.Static(g.NodeFunc(func(w io.Writer) error {
+			renders++
+			return renderErr
+		}))
+
+		if err := n.Render(io.Discard); !errors.Is(err, renderErr) {
+			t.Fatalf("expected render error %v, got %v", renderErr, err)
+		}
+		if err := n.Render(io.Discard); !errors.Is(err, renderErr) {
+			t.Fatalf("expected cached render error %v, got %v", renderErr, err)
+		}
+		if renders != 1 {
+			t.Fatalf("expected 1 render, got %v", renders)
+		}
+	})
+
+	t.Run("returns write error without rerendering", func(t *testing.T) {
+		var renders int
+		n := g.Static(g.NodeFunc(func(w io.Writer) error {
+			renders++
+			_, err := io.WriteString(w, "hat")
+			return err
+		}))
+
+		err := n.Render(&erroringWriter{})
+		assert.Error(t, err)
+		assert.Equal(t, "hat", n)
+		if renders != 1 {
+			t.Fatalf("expected 1 render, got %v", renders)
+		}
+	})
+
+	t.Run("renders child once with concurrent callers", func(t *testing.T) {
+		var renders atomic.Int64
+		n := g.Static(g.NodeFunc(func(w io.Writer) error {
+			renders.Add(1)
+			_, err := io.WriteString(w, "hat")
+			return err
+		}))
+
+		var wg sync.WaitGroup
+		for i := 0; i < 32; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				assert.Equal(t, "hat", n)
+			}()
+		}
+		wg.Wait()
+
+		if renders.Load() != 1 {
+			t.Fatalf("expected 1 render, got %v", renders.Load())
+		}
+	})
+}
+
+func ExampleStatic() {
+	staticHead := g.Static(g.El("head",
+		g.El("title", g.Text("My site")),
+		g.El("link", g.Attr("rel", "stylesheet"), g.Attr("href", "/app.css")),
+	))
+
+	e := g.El("html", staticHead, g.El("body", g.Text("Hello")))
+	_ = e.Render(os.Stdout)
+	// Output: <html><head><title>My site</title><link rel="stylesheet" href="/app.css"></head><body>Hello</body></html>
 }
