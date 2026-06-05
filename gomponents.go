@@ -7,7 +7,7 @@
 //
 // The functions [Text], [Textf], [Raw], and [Rawf] can be used to create text nodes, either HTML-escaped or unescaped.
 //
-// See also helper functions [Map], [If], and [Iff] for mapping data to nodes and inserting them conditionally.
+// See also helper functions [Map], [If], [Iff], and [Static] for mapping data to nodes, inserting them conditionally, and caching static trees.
 //
 // There's also the [Group] type, which is a slice of [Node]-s that can be rendered as one [Node].
 //
@@ -373,7 +373,9 @@ func Iff(condition bool, f func() Node) Node {
 }
 
 // Static pre-renders a large static HTML tree once and reuses the rendered HTML.
-// Use it only for nodes that never depend on request data, user data, or changing state.
+// It is useful only when the returned node is reused.
+// Use it only for [ElementType] nodes that never depend on request data, user data, or changing state.
+// Static always returns an [ElementType] node, so don't use it for attributes.
 //
 // For example:
 //

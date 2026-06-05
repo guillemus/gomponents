@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 	"maragu.dev/gomponents/internal/assert"
 )
 
@@ -442,9 +443,9 @@ func TestStatic(t *testing.T) {
 	})
 
 	t.Run("renders child once with concurrent callers", func(t *testing.T) {
-		var renders atomic.Int64
+		var renders int64
 		n := g.Static(g.NodeFunc(func(w io.Writer) error {
-			renders.Add(1)
+			atomic.AddInt64(&renders, 1)
 			_, err := io.WriteString(w, "hat")
 			return err
 		}))
@@ -459,19 +460,19 @@ func TestStatic(t *testing.T) {
 		}
 		wg.Wait()
 
-		if renders.Load() != 1 {
-			t.Fatalf("expected 1 render, got %v", renders.Load())
+		if atomic.LoadInt64(&renders) != 1 {
+			t.Fatalf("expected 1 render, got %v", atomic.LoadInt64(&renders))
 		}
 	})
 }
 
 func ExampleStatic() {
-	staticHead := g.Static(g.El("head",
-		g.El("title", g.Text("My site")),
-		g.El("link", g.Attr("rel", "stylesheet"), g.Attr("href", "/app.css")),
+	staticHead := g.Static(h.Head(
+		h.TitleEl(g.Text("My site")),
+		h.Link(h.Rel("stylesheet"), h.Href("/app.css")),
 	))
 
-	e := g.El("html", staticHead, g.El("body", g.Text("Hello")))
+	e := h.HTML(staticHead, h.Body(g.Text("Hello")))
 	_ = e.Render(os.Stdout)
 	// Output: <html><head><title>My site</title><link rel="stylesheet" href="/app.css"></head><body>Hello</body></html>
 }
